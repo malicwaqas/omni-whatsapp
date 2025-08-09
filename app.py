@@ -1,16 +1,17 @@
-import os, json, datetime, httpx
+import os, datetime, httpx
 from fastapi import FastAPI, Request, Response
 from openai import OpenAI
 
 app = FastAPI()
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
 GRAPH = "https://graph.facebook.com/v20.0"
 PHONE_ID = os.getenv("WHATSAPP_PHONE_ID")
 TOKEN = os.getenv("WHATSAPP_TOKEN")
 VERIFY = os.getenv("WHATSAPP_VERIFY_TOKEN")
-CITY = os.getenv("HOME_CITY", "Dubai,AE")
+CITY = os.getenv("HOME_CITY", "Dubai")
 
-async def wa_send_text(to, text):
+async def wa_send_text(to: str, text: str):
     async with httpx.AsyncClient(timeout=20) as s:
         await s.post(f"{GRAPH}/{PHONE_ID}/messages",
             headers={"Authorization": f"Bearer {TOKEN}"},
@@ -22,8 +23,7 @@ async def wa_send_text(to, text):
             })
 
 @app.get("/health")
-async def health():
-    return {"ok": True}
+async def health(): return {"ok": True}
 
 @app.get("/whatsapp/webhook")
 async def verify(mode: str = None, challenge: str = None, token: str = None):
@@ -47,8 +47,8 @@ async def webhook(req: Request):
                 await wa_send_text(frm, "Hey! I’m OmniAI. Try: `brief`, `summarize <url>`.")
                 continue
 
-            elif text == "brief":
-                w = (await httpx.AsyncClient().get(f"https://wttr.in/{CITY}?format=3")).text
+            if text == "brief":
+                w = (await httpx.AsyncClient(timeout=20).get(f"https://wttr.in/{CITY}?format=3")).text
                 prompt = f"Make a crisp morning brief for {CITY} on {datetime.date.today()} including: {w}. Under 120 words."
                 res = client.chat.completions.create(
                     model="gpt-4o-mini",
@@ -57,7 +57,7 @@ async def webhook(req: Request):
                 await wa_send_text(frm, res.choices[0].message.content)
                 continue
 
-            elif text.startswith("summarize "):
+            if text.startswith("summarize "):
                 url = text_raw.split(" ", 1)[1]
                 html = (await httpx.AsyncClient(timeout=20).get(url)).text[:20000]
                 res = client.chat.completions.create(
@@ -67,13 +67,13 @@ async def webhook(req: Request):
                 await wa_send_text(frm, res.choices[0].message.content)
                 continue
 
-            else:
-                res = client.chat.completions.create(
-                    model="gpt-4o-mini",
-                    messages=[
-                        {"role": "system", "content": "Helpful, concise assistant."},
-                        {"role": "user", "content": text_raw}
-                    ]
-                )
-                await wa_send_text(frm, res.choices[0].message.content)
+            # default chat
+            res = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": "Helpful, concise assistant."},
+                    {"role": "user", "content": text_raw}
+                ]
+            )
+            await wa_send_text(frm, res.choices[0].message.content)
     return {"ok": True}
