@@ -40,10 +40,40 @@ async def webhook(req: Request):
             if msg.get("type") != "text":
                 continue
             frm = msg["from"]
-            text = msg["text"]["body"].strip()
+            text_raw = msg["text"]["body"].strip()
+            text = text_raw.lower()
 
-            if text.lower() in ("hi", "hello", "/start", "start"):
+            if text in ("hi", "hello", "/start", "start"):
                 await wa_send_text(frm, "Hey! I’m OmniAI. Try: `brief`, `summarize <url>`.")
                 continue
 
-            if text.lower
+            elif text == "brief":
+                w = (await httpx.AsyncClient().get(f"https://wttr.in/{CITY}?format=3")).text
+                prompt = f"Make a crisp morning brief for {CITY} on {datetime.date.today()} including: {w}. Under 120 words."
+                res = client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=[{"role": "user", "content": prompt}]
+                )
+                await wa_send_text(frm, res.choices[0].message.content)
+                continue
+
+            elif text.startswith("summarize "):
+                url = text_raw.split(" ", 1)[1]
+                html = (await httpx.AsyncClient(timeout=20).get(url)).text[:20000]
+                res = client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=[{"role": "user", "content": f"Summarize in 5 bullets:\n{html}"}]
+                )
+                await wa_send_text(frm, res.choices[0].message.content)
+                continue
+
+            else:
+                res = client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=[
+                        {"role": "system", "content": "Helpful, concise assistant."},
+                        {"role": "user", "content": text_raw}
+                    ]
+                )
+                await wa_send_text(frm, res.choices[0].message.content)
+    return {"ok": True}
